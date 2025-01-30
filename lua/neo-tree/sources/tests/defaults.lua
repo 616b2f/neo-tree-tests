@@ -7,8 +7,10 @@ local config = {
     test_case = {
       { "icon",
         icons = {
-          test_success = "",
+          test_passed = "",
           test_failed = "",
+          test_warn = "󰀨",
+          test_skipped = "",
           test_unknown = "",
         },
       },

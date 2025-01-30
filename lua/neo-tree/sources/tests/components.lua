@@ -28,18 +28,24 @@ M.icon = function(config, node, state)
   if node.type == "test_case" then
     local nd_stat = utils.get_stat(node)
 
-    -- print("test icon component: " .. vim.inspect(nd_stat.test_run_state))
-
-    if nd_stat.test_run_state == c.StatusCode.Ok then
-      icon = config.icons.test_success
-      highlight = "DiagnosticOk"
-    elseif nd_stat.test_run_state == c.StatusCode.Error or
-           nd_stat.test_run_state == c.StatusCode.Cancelled then
+    if nd_stat.test_run_state == c.TestStatus.Passed then
+      icon = config.icons.test_passed
+      highlight = "DiagnosticSignOk"
+    elseif nd_stat.test_run_state == c.TestStatus.Failed or
+           nd_stat.test_run_state == c.TestStatus.Cancelled then
       icon = config.icons.test_failed
-      highlight = "DiagnosticError"
+      highlight = "DiagnosticSignError"
+    elseif nd_stat.test_run_state == c.TestStatus.Skipped then
+      icon = config.icons.test_skipped
+      highlight = "DiagnosticSignHint"
+    elseif nd_stat.test_run_state == c.TestStatus.Ignored then
+      icon = config.icons.test_warn
+      highlight = "DiagnosticSignWarn"
     elseif nd_stat.test_run_state == "unknown" then
       icon = config.icons.test_unknown
-      highlight = "DiagnosticWarn"
+      highlight = "DiagnosticSignWarn"
+    else
+      print("draw icon for: " .. vim.inspect(nd_stat))
     end
   end
   return {

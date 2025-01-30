@@ -64,13 +64,46 @@ M.run = function(state)
     ---@param context bsp.HandlerContext
     ---@param config table|nil
     function (err, result, context, config)
-      node.stat.test_run_state = result.statusCode
-      renderer.redraw(state)
     end,
   0)
 end
 
 M.output = function(state)
+  local extra = get_node_extra(state)
+  if extra.test_output then
+    local popup = Popup({
+      enter = true,
+      focusable = true,
+      relative = "editor",
+      border = {
+        style = "solid",
+        text = {
+          top = "[ Test output ]",
+          top_align = "center"
+        }
+      },
+      position = "50%",
+      size = {
+        width = "80%",
+        height = "60%",
+      },
+      buf_options = {
+        modifiable = false,
+        readonly = true,
+      },
+    })
+
+    -- set content
+    vim.api.nvim_buf_set_lines(popup.bufnr, 0, 1, false, extra.test_output)
+
+    -- mount/open the component
+    popup:mount()
+
+    -- unmount component when cursor leaves buffer
+    popup:on(event.BufLeave, function()
+      popup:unmount()
+    end)
+  end
 end
 
 M.jumpto = function(state)
@@ -109,43 +142,7 @@ end
 M.expand_all = function(state)
 end
 
-M.open = function (state)
-  local extra = get_node_extra(state)
-  if extra.test_output then
-    local popup = Popup({
-      enter = true,
-      focusable = true,
-      relative = "editor",
-      border = {
-        style = "solid",
-        text = {
-          top = "[ Test output ]",
-          top_align = "center"
-        }
-      },
-      position = "50%",
-      size = {
-        width = "80%",
-        height = "60%",
-      },
-      buf_options = {
-        modifiable = false,
-        readonly = true,
-      },
-    })
-
-    -- set content
-    vim.api.nvim_buf_set_lines(popup.bufnr, 0, 1, false, extra.test_output)
-
-    -- mount/open the component
-    popup:mount()
-
-    -- unmount component when cursor leaves buffer
-    popup:on(event.BufLeave, function()
-      popup:unmount()
-    end)
-  end
-end
+M.open = M.output
 
 cc._add_common_commands(M)
 
