@@ -4,6 +4,18 @@ local config = {
       { "icon" },
       { "name" },
     },
+    build_target = {
+      { "icon",
+        icons = {
+          test_passed = "",
+          test_failed = "",
+          test_warn = "󰀨",
+          test_skipped = "",
+          test_unknown = "",
+        },
+      },
+      { "name" },
+    },
     test_case = {
       { "icon",
         icons = {

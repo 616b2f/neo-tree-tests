@@ -18,34 +18,34 @@ local utils = require("neo-tree.utils")
 local M = {}
 
 M.icon = function(config, node, state)
-  if node.type ~= "test_case" then
+  if node.type ~= "test_case" and node.type ~= "build_target" then
     return common.icon(config, node, state)
   end
 
   local icon = nil
   local padding = config.padding or " "
   local highlight = config.highlight or highlights.FILE_ICON
-  if node.type == "test_case" then
-    local nd_stat = utils.get_stat(node)
+  if node.type == "test_case" or node.type == "build_target" then
+    local nd_extra = node.extra
 
-    if nd_stat.test_run_state == c.TestStatus.Passed then
+    if nd_extra.test_run_state == c.TestStatus.Passed then
       icon = config.icons.test_passed
       highlight = "DiagnosticSignOk"
-    elseif nd_stat.test_run_state == c.TestStatus.Failed or
-           nd_stat.test_run_state == c.TestStatus.Cancelled then
+    elseif nd_extra.test_run_state == c.TestStatus.Failed or
+           nd_extra.test_run_state == c.TestStatus.Cancelled then
       icon = config.icons.test_failed
       highlight = "DiagnosticSignError"
-    elseif nd_stat.test_run_state == c.TestStatus.Skipped then
+    elseif nd_extra.test_run_state == c.TestStatus.Skipped then
       icon = config.icons.test_skipped
       highlight = "DiagnosticSignHint"
-    elseif nd_stat.test_run_state == c.TestStatus.Ignored then
+    elseif nd_extra.test_run_state == c.TestStatus.Ignored then
       icon = config.icons.test_warn
       highlight = "DiagnosticSignWarn"
-    elseif nd_stat.test_run_state == "unknown" then
+    elseif nd_extra.test_run_state == "unknown" then
       icon = config.icons.test_unknown
       highlight = "DiagnosticSignWarn"
     else
-      print("draw icon for: " .. vim.inspect(nd_stat))
+      print("draw icon for: " .. vim.inspect(nd_extra))
     end
   end
   return {

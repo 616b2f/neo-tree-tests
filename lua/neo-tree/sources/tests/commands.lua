@@ -41,31 +41,31 @@ M.run = function(state)
   ---@class neo-tree-tests.Node
   local node = tree:get_node()
 
-  local testParams = {
-    originId = utils.new_origin_id(),
-    targets = { node.extra.build_target },
-    dataKind = "dotnet-test",
-    data = {
-      filters = {
-        "FullyQualifiedName=" .. node.id,
+  if node.type == "test_case" then
+    local testParams = {
+      originId = utils.new_origin_id(),
+      targets = { node.extra.build_target },
+      dataKind = "dotnet-test",
+      data = {
+        filter = "id==" .. node.id
       }
     }
-  }
-  ---@class bsp.Client
-  local client = bsp.get_client_by_id(node.extra.client_id)
+    ---@class bsp.Client
+    local client = bsp.get_client_by_id(node.extra.client_id)
 
-  assert(client, "client with id '" .. node.extra.client_id .. "' could not be retrieved")
+    assert(client, "client with id '" .. node.extra.client_id .. "' could not be retrieved")
 
-  client.request(
-    ms.buildTarget_test,
-    testParams,
-    ---@param err bp.ResponseError|nil
-    ---@param result bsp.TestResult
-    ---@param context bsp.HandlerContext
-    ---@param config table|nil
-    function (err, result, context, config)
-    end,
-  0)
+    client.request(
+      ms.buildTarget_test,
+      testParams,
+      ---@param err bp.ResponseError|nil
+      ---@param result bsp.TestResult
+      ---@param context bsp.HandlerContext
+      ---@param config table|nil
+      function (err, result, context, config)
+      end,
+    0)
+  end
 end
 
 M.output = function(state)

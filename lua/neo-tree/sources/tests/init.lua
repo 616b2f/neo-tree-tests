@@ -7,6 +7,7 @@ local manager = require("neo-tree.sources.manager")
 local defaults = require("neo-tree.sources.tests.defaults")
 local events = require("neo-tree.events")
 local utils = require("neo-tree.utils")
+local NuiTree = require("nui.tree")
 local bsp_utils = require("bsp.utils")
 local bsp = require("bsp")
 local pt = require('bsp.protocol')
@@ -19,8 +20,37 @@ local M = {
 
 vim.api.nvim_create_augroup('neo-tree-tests', {})
 
----@type [string, bsp.TestCaseDiscoveredData]
-local test_case_discovery_results = {}
+local function add_node_to_state(state, node)
+  if not state.tests_tree then
+    state.tests_tree = NuiTree({
+      winid = vim.api.nvim_get_current_win(),
+      bufnr = vim.api.nvim_get_current_buf(),
+      get_node_id = function (n)
+        return n.id
+      end
+    })
+  end
+
+  local parent = state.tests_tree:get_node(node.extra.build_target.uri)
+
+  if not parent then
+    local node_data = {
+      id = node.extra.build_target.uri,
+      name = vim.uri_to_fname(node.extra.build_target.uri),
+      type = "build_target",
+      extra = {
+        test_run_state = "unknown"
+      }
+    }
+    parent = NuiTree.Node(node_data)
+    -- local root_nodes = state.tests_tree:get_nodes()
+    -- table.insert(root_nodes, parent)
+    -- state.tests_tree:set_nodes(root_nodes)
+    state.tests_tree:add_node(parent)
+  end
+
+  state.tests_tree:add_node(NuiTree.Node(node), parent.id)
+end
 
 ---@param source_name string
 local function register_test_run_result_events(source_name)
@@ -38,7 +68,7 @@ local function register_test_run_result_events(source_name)
           handles = {}
           handles[tokenId] = {}
         elseif result.dataKind == bsp.protocol.Constants.TaskStartDataKind.TestCaseDiscoveryTask then
-          test_case_discovery_results = {}
+          -- TODO: think if we have something to do here
         end
       end
     })
@@ -51,10 +81,33 @@ local function register_test_run_result_events(source_name)
         ---@type bsp.TaskProgressParams
         local result = ev.data.result
         if result.dataKind == pt.TaskProgressDataKind.TestCaseDiscovered then
+          local state = manager.get_state(source_name)
           ---@type bsp.TestCaseDiscoveredData
-          local data = result.data
-          local key = data.buildTarget.uri .. ":" .. data.fullyQualifiedName
-          test_case_discovery_results[key] = data
+          local test_case = result.data
+          ---@class neo-tree-tests.Node: NuiNode.TestNode
+          ---@field id string TestCase ID
+          ---@field name string Display name of the test
+          ---@field stat_provider string Stat provider from which the nodes where retrieved
+          ---@field type string Type of the node
+          ---@field path string Full path of the test file
+          ---@field extra neo-tree-tests.TestNodeExtra
+          local node = {
+            id = test_case.id,
+            name = test_case.displayName,
+            type = "test_case",
+            path = test_case.filePath,
+            extra = {
+              bufnr = -1,
+              fully_qualified_name = test_case.fullyQualifiedName,
+              position = { tonumber(test_case.line) - 2, 0 },
+              build_target = test_case.buildTarget,
+              path = test_case.filePath,
+              client_id = ev.data.client_id,
+              test_output = nil,
+              test_run_state = "unknown",
+            }
+          }
+          add_node_to_state(state, node)
         end
       end
     })
@@ -71,37 +124,8 @@ local function register_test_run_result_events(source_name)
         local tokenId = data.client_id .. ":" .. result.originId
 
         if result.dataKind == pt.TaskFinishDataKind.TestCaseDiscoveryFinish then
-          local tests_list = {}
-          for _, test_case in pairs(test_case_discovery_results) do
-            ---@class neo-tree-tests.Node: NuiNode.TestNode
-            ---@field id string FullyQualifiedName of the test case
-            ---@field name string Display name of the test
-            ---@field stat_provider string Stat provider from which the nodes where retrieved
-            ---@field type string Type of the node
-            ---@field path string Full path of the test file
-            ---@field stat neo-tree-tests.TestStat
-            ---@field extra neo-tree-tests.TestNodeExtra
-            local node = {
-              id = test_case.fullyQualifiedName,
-              name = test_case.displayName,
-              stat_provider = "bsp-tests-provider",
-              type = "test_case",
-              path = test_case.filePath,
-              extra = {
-                bufnr = -1,
-                position = { tonumber(test_case.line) - 2, 0 },
-                build_target = test_case.buildTarget,
-                path = test_case.filePath,
-                client_id = data.client_id,
-                test_output = nil
-              }
-            }
-            table.insert(tests_list, node)
-          end
-          local state = manager.get_state(source_name)
-          state.tests_list = tests_list
+          -- TODO: think if we need to do here something
         elseif result.dataKind == bsp.protocol.Constants.TaskFinishDataKind.TestReport then
-
           ---@type bsp.TestReport
           local test_report = result.data
           local lines = {}
@@ -145,12 +169,19 @@ local function register_test_run_result_events(source_name)
             table.insert(lines, " " .. v)
           end
 
-          local fqn = test_finish.displayName
+          --TODO: displayName is not FQN it does not include test case parameters
+          local test_case_id = test_finish.id
           local state = manager.get_state(source_name)
-          local node = state.tree:get_node(fqn)
+
+          local node = nil
+          if state.tree then
+            node = state.tree:get_node(test_case_id)
+          else
+            node = state.tests_tree:get_node(test_case_id)
+          end
 
           if node ~= nil then
-            node.stat.test_run_state = test_finish.status
+            node.extra.test_run_state = test_finish.status
             node.extra.test_output = lines
             renderer.redraw(state)
           end
@@ -161,6 +192,7 @@ end
 
 ---@class neo-tree-tests.TestNodeExtra
 ---@field bufnr integer Buffer number 
+---@field fully_qualified_name string FullyQualifiedName of the test case
 ---@field client_id integer BSP client id from which the test was retrieved
 ---@field position integer[] (row, col) tuple Test position inside the test file
 ---@field build_target bsp.BuildTargetIdentifier BuildTarget where the test is defined
@@ -172,26 +204,6 @@ end
 ---@field name string User friendly name of test case
 ---@field stat_provider string Provider name for stat
 
----@class StatTime
----@field sec number
----
----@class neo-tree-tests.TestStat
----@field full_qualified_name string
----@field test_run_state bsp.TestStatus
----@field mtime StatTime
----
----Returns the stats for the given node in the same format as `vim.loop.fs_stat`
----@param node neo-tree-tests.Node NuiNode to get the stats for.
----@return neo-tree-tests.TestStat Stats for the given node.
-M.get_node_stat = function(node)
-  return {
-    full_qualified_name = node.id,
-    position = node.position,
-    test_run_state = "unknown",
-    mtime = { sec = 1692617750 },
-  }
-end
-
 ---Navigate to the given path.
 ---@param path string Path to navigate to. If empty, will navigate to the cwd.
 M.navigate = function(state, path)
@@ -200,7 +212,23 @@ M.navigate = function(state, path)
   -- end
   -- state.path = path
   --
-  renderer.show_nodes(state.tests_list, state)
+  if state.tests_tree then
+    local items = {}
+    for _, node in pairs(state.tests_tree:get_nodes()) do
+      ---@type NuiTree.Node
+      local n = node
+      if n:has_children() then
+        n.children = {}
+
+        for _, child in pairs(state.tests_tree:get_nodes(n:get_id())) do
+          table.insert(n.children, child)
+        end
+        table.insert(items, n)
+      end
+    end
+
+    renderer.show_nodes(items, state)
+  end
 end
 
 
@@ -241,10 +269,18 @@ end
 --wants to change from the defaults. May be empty to accept default values.
 M.setup = function(config, global_config)
 
+  -- local state = manager.get_state(M.name)
+  -- if not state.tree then
+  --   state.tree = NuiTree({
+  --     -- ns_id = highlights.ns_id,
+  --     winid = state.winid,
+  --     bufnr = state.bufnr,
+  --     get_node_id = function(node)
+  --       return node.id
+  --     end,
+  --   })
+  -- end
   register_test_run_result_events(M.name)
-
-  -- redister or custom stat provider to override the default libuv one
-  require("neo-tree.utils").register_stat_provider("bsp-tests-provider", M.get_node_stat)
 
   -- You most likely want to use this function to subscribe to events
   if config.use_libuv_file_watcher then
