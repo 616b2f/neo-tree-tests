@@ -6,8 +6,6 @@ local renderer = require("neo-tree.ui.renderer")
 local popups = require("neo-tree.ui.popups")
 local nt_utils = require("neo-tree.utils")
 
-local ui = require("neotest.lib.ui") -- TODO: don't use neotest as extra dependency
-
 local bsp = require("bsp")
 local ms = require("bsp.protocol").Methods
 local bsp_utils = require("bsp.utils")
@@ -133,9 +131,7 @@ M.jumpto = function(state)
 
   test_extra.bufnr = buf
 
-  -- cc.open_with_window_picker(state, function () end)
-  -- open_with_window_picker needs https://github.com/s1n7ax/nvim-window-picker as dependency
-  ui.open_buf(buf, test_extra.position[1], test_extra.position[2])
+  cc.open_with_window_picker(state, function () end)
 end
 
 M.stop = function(state)
