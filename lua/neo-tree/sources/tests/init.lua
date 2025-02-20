@@ -7,7 +7,11 @@ local manager = require("neo-tree.sources.manager")
 local defaults = require("neo-tree.sources.tests.defaults")
 local events = require("neo-tree.events")
 local utils = require("neo-tree.utils")
+
 local NuiTree = require("nui.tree")
+
+local path = require("plenary.path")
+
 local bsp_utils = require("bsp.utils")
 local bsp = require("bsp")
 local pt = require('bsp.protocol')
@@ -23,7 +27,8 @@ vim.api.nvim_create_augroup('neo-tree-tests', {})
 ---Adds node to the tests tree
 ---@param state any
 ---@param node neo-tree-tests.Node
-local function add_node_to_state(state, node)
+---@param workspace_dir string
+local function add_node_to_state(state, node, workspace_dir)
   if not state.tests_tree then
     state.tests_tree = NuiTree({
       winid = vim.api.nvim_get_current_win(),
@@ -37,9 +42,10 @@ local function add_node_to_state(state, node)
   local parent = state.tests_tree:get_node(node.extra.build_target.uri)
 
   if not parent then
+    local name = path:new(vim.uri_to_fname(node.extra.build_target.uri)):make_relative(workspace_dir)
     local node_data = {
       id = node.extra.build_target.uri,
-      name = vim.uri_to_fname(node.extra.build_target.uri),
+      name = name,
       type = "build_target",
       extra = {
         test_run_state = "unknown"
@@ -110,7 +116,9 @@ local function register_test_run_result_events(source_name)
               test_run_state = "unknown",
             }
           }
-          add_node_to_state(state, node)
+          local client = bsp.get_client_by_id(ev.data.client_id)
+          assert(client, "client could not be found for id: " .. ev.data.client_id)
+          add_node_to_state(state, node, client.workspace_dir)
         end
       end
     })
