@@ -38,7 +38,7 @@ local config = {
       ["d"] = "debug",
       ["D"] = "show_debug_info",
       ["e"] = "expand_all",
-      ["<TAB>"] = "expand"
+      ["<TAB>"] = "toggle_node"
     },
   },
 }

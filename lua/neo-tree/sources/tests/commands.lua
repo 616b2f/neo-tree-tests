@@ -3,11 +3,15 @@ local cc = require("neo-tree.sources.common.commands")
 local tests = require("neo-tree.sources.tests")
 local manager = require("neo-tree.sources.manager")
 local renderer = require("neo-tree.ui.renderer")
-local ui = require("neotest.lib.ui") -- TODO: don't use neotest as extra dependency
 local popups = require("neo-tree.ui.popups")
-local ms = require("bsp.protocol").Methods
+local nt_utils = require("neo-tree.utils")
+
+local ui = require("neotest.lib.ui") -- TODO: don't use neotest as extra dependency
+
 local bsp = require("bsp")
-local utils = require("bsp.utils")
+local ms = require("bsp.protocol").Methods
+local bsp_utils = require("bsp.utils")
+
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
 
@@ -34,6 +38,7 @@ M.show_debug_info = function(state)
 end
 
 M.refresh = function(state)
+  manager.refresh(tests.name, state)
 end
 
 M.run = function(state)
@@ -43,7 +48,7 @@ M.run = function(state)
 
   if node.type == "test_case" then
     local testParams = {
-      originId = utils.new_origin_id(),
+      originId = bsp_utils.new_origin_id(),
       targets = { node.extra.build_target },
       dataKind = "dotnet-test",
       data = {
@@ -137,9 +142,26 @@ M.stop = function(state)
 end
 M.debug = function(state)
 end
-M.expand = function(state)
-end
+-- M.expand = function(state)
+-- end
 M.expand_all = function(state)
+  local tree = state.tree
+  local nodes = tree:get_nodes()
+
+  for _, node in pairs(nodes) do
+    if nt_utils.is_expandable(node) and
+       node:has_children() then
+        local updated = false
+        if node:is_expanded() then
+          updated = node:collapse()
+        else
+          updated = node:expand()
+        end
+        if updated then
+          renderer.redraw(state)
+        end
+    end
+  end
 end
 
 M.open = M.output

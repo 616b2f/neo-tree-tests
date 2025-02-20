@@ -20,6 +20,9 @@ local M = {
 
 vim.api.nvim_create_augroup('neo-tree-tests', {})
 
+---Adds node to the tests tree
+---@param state any
+---@param node neo-tree-tests.Node
 local function add_node_to_state(state, node)
   if not state.tests_tree then
     state.tests_tree = NuiTree({
