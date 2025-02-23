@@ -89,6 +89,10 @@ local function add_node_to_state(state, node, workspace_dir)
     state.tests_tree:add_node(parent)
   end
 
+  if state.tests_tree:get_node(node.id) then
+    state.tests_tree:remove_node(node.id)
+  end
+
   state.tests_tree:add_node(NuiTree.Node(node), parent.id)
 end
 
@@ -232,6 +236,10 @@ M.navigate = function(state, path)
   --   path = vim.fn.getcwd()
   -- end
   -- state.path = path
+  if state.tree then
+    state.tree = nil
+  end
+
   if state.tests_tree and not state.tree then
     local items = {}
     for _, node in pairs(state.tests_tree:get_nodes()) do
@@ -259,7 +267,7 @@ local function request_test_cases(source_name)
 
       local build_targets = nil
       if next(client.build_targets) then
-        build_targets = client.build_targets
+        build_targets = vim.tbl_values(client.build_targets)
       else
         ---@type { err: bp.ResponseError|nil, result: bsp.WorkspaceBuildTargetsResult }|nil
         local result = client.request_sync(ms.workspace_buildTargets, nil, default_request_timeout, 0)
@@ -291,12 +299,13 @@ local function request_test_cases(source_name)
 
       client.request(ms.buildTarget_testCaseDiscovery, testCaseDiscoveryParams, function () end, 0)
     else
-      for _, test_cases in pairs(client.test_cases) do
-        for _, test_case in pairs(test_cases) do
-          local state = manager.get_state(source_name)
-          local node = convert_test_case_to_node(test_case, client.id)
-          add_node_to_state(state, node, client.workspace_dir)
-        end
+      local test_cases = vim.iter(vim.tbl_values(client.test_cases))
+        :flatten()
+        :totable()
+      local state = manager.get_state(source_name)
+      for _, test_case in pairs(test_cases) do
+        local node = convert_test_case_to_node(test_case, client.id)
+        add_node_to_state(state, node, client.workspace_dir)
       end
     end
   end
