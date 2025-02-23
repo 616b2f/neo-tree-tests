@@ -148,9 +148,7 @@ M.expand_all = function(state)
     if nt_utils.is_expandable(node) and
        node:has_children() then
         local updated = false
-        if node:is_expanded() then
-          updated = node:collapse()
-        else
+        if not node:is_expanded() then
           updated = node:expand()
         end
         if updated then
