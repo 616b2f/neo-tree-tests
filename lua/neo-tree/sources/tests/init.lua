@@ -24,6 +24,37 @@ local M = {
 
 vim.api.nvim_create_augroup('neo-tree-tests', {})
 
+---Convert BSP test case to NuiNode
+---@param test_case bsp.TestCaseDiscoveredData
+---@param client_id integer BSP client ID
+---@return neo-tree-tests.Node
+local function convert_test_case_to_node(test_case, client_id)
+  ---@class neo-tree-tests.Node: NuiNode.TestNode
+  ---@field id string TestCase ID
+  ---@field name string Display name of the test
+  ---@field stat_provider string Stat provider from which the nodes where retrieved
+  ---@field type string Type of the node
+  ---@field path string Full path of the test file
+  ---@field extra neo-tree-tests.TestNodeExtra
+  local node = {
+    id = test_case.id,
+    name = test_case.displayName,
+    type = "test_case",
+    path = test_case.filePath,
+    extra = {
+      bufnr = -1,
+      fully_qualified_name = test_case.fullyQualifiedName,
+      position = { tonumber(test_case.line) - 2, 0 },
+      build_target = test_case.buildTarget,
+      path = test_case.filePath,
+      client_id = client_id,
+      test_output = nil,
+      test_run_state = "unknown",
+    }
+  }
+  return node
+end
+
 ---Adds node to the tests tree
 ---@param state any
 ---@param node neo-tree-tests.Node
@@ -63,6 +94,7 @@ end
 
 ---@param source_name string
 local function register_test_run_result_events(source_name)
+  print("register tests run events")
   local handles = {}
   vim.api.nvim_create_autocmd("User",
     {
@@ -93,31 +125,10 @@ local function register_test_run_result_events(source_name)
           local state = manager.get_state(source_name)
           ---@type bsp.TestCaseDiscoveredData
           local test_case = result.data
-          ---@class neo-tree-tests.Node: NuiNode.TestNode
-          ---@field id string TestCase ID
-          ---@field name string Display name of the test
-          ---@field stat_provider string Stat provider from which the nodes where retrieved
-          ---@field type string Type of the node
-          ---@field path string Full path of the test file
-          ---@field extra neo-tree-tests.TestNodeExtra
-          local node = {
-            id = test_case.id,
-            name = test_case.displayName,
-            type = "test_case",
-            path = test_case.filePath,
-            extra = {
-              bufnr = -1,
-              fully_qualified_name = test_case.fullyQualifiedName,
-              position = { tonumber(test_case.line) - 2, 0 },
-              build_target = test_case.buildTarget,
-              path = test_case.filePath,
-              client_id = ev.data.client_id,
-              test_output = nil,
-              test_run_state = "unknown",
-            }
-          }
-          local client = bsp.get_client_by_id(ev.data.client_id)
-          assert(client, "client could not be found for id: " .. ev.data.client_id)
+          local client_id = ev.data.client_id
+          local node = convert_test_case_to_node(test_case, client_id)
+          local client = bsp.get_client_by_id(client_id)
+          assert(client, "client could not be found for id: " .. client_id)
           add_node_to_state(state, node, client.workspace_dir)
         end
       end
@@ -222,8 +233,7 @@ M.navigate = function(state, path)
   --   path = vim.fn.getcwd()
   -- end
   -- state.path = path
-  --
-  if state.tests_tree then
+  if state.tests_tree and not state.tree then
     local items = {}
     for _, node in pairs(state.tests_tree:get_nodes()) do
       ---@type NuiTree.Node
@@ -242,37 +252,55 @@ M.navigate = function(state, path)
   end
 end
 
-
-function M.__get_test_cases(state)
-
+local function request_test_cases(source_name)
   local default_request_timeout = 10000
+  local clients = bsp.get_clients()
+  for _, client in pairs(clients) do
+    if not next(client.test_cases) then
 
-  ---@type { err: bp.ResponseError|nil, result: bsp.WorkspaceBuildTargetsResult }|nil
-  local result = client.request_sync(ms.workspace_buildTargets, nil, default_request_timeout, 0)
-  if not result or result.err then
-    return {}
-  end
+      local build_targets = nil
+      if next(client.build_targets) then
+        build_targets = client.build_targets
+      else
+        ---@type { err: bp.ResponseError|nil, result: bsp.WorkspaceBuildTargetsResult }|nil
+        local result = client.request_sync(ms.workspace_buildTargets, nil, default_request_timeout, 0)
+        if result and not result.err then
+          build_targets = result.result.targets
+        end
+      end
 
-  local targets = vim.iter(result.result.targets)
-    ---@param t bsp.BuildTarget
-    :filter(function (t)
-              return t.capabilities.canTest
+      assert(build_targets, "could not retrieve build targets")
+
+      local test_targets = vim.iter(build_targets)
+        ---@param t bsp.BuildTarget
+        :filter(function (t)
+                  return t.capabilities.canTest
+                end)
+        ---@param t bsp.BuildTarget
+        :map(function (t)
+              return t.id
             end)
-    ---@param t bsp.BuildTarget
-    :map(function (t)
-          return t.id
-         end)
-    :totable()
+        :totable()
 
-  local origin_id = bsp_utils.new_origin_id()
+      local origin_id = bsp_utils.new_origin_id()
 
-  ---@type bsp.TestCaseDiscoveredParams
-  local testCaseDiscoveryParams = {
-    originId = origin_id,
-    targets = targets,
-  }
+      ---@type bsp.TestCaseDiscoveredParams
+      local testCaseDiscoveryParams = {
+        originId = origin_id,
+        targets = test_targets,
+      }
 
-  client.request(ms.buildTarget_testCaseDiscovery, testCaseDiscoveryParams, function () end, 0)
+      client.request(ms.buildTarget_testCaseDiscovery, testCaseDiscoveryParams, function () end, 0)
+    else
+      for _, test_cases in pairs(client.test_cases) do
+        for _, test_case in pairs(test_cases) do
+          local state = manager.get_state(source_name)
+          local node = convert_test_case_to_node(test_case, client.id)
+          add_node_to_state(state, node, client.workspace_dir)
+        end
+      end
+    end
+  end
 end
 
 ---Configures the plugin, should be called before the plugin is used.
@@ -280,28 +308,18 @@ end
 --wants to change from the defaults. May be empty to accept default values.
 M.setup = function(config, global_config)
 
-  -- local state = manager.get_state(M.name)
-  -- if not state.tree then
-  --   state.tree = NuiTree({
-  --     -- ns_id = highlights.ns_id,
-  --     winid = state.winid,
-  --     bufnr = state.bufnr,
-  --     get_node_id = function(node)
-  --       return node.id
+  register_test_run_result_events(M.name)
+  request_test_cases(M.name)
+
+  -- You most likely want to use this function to subscribe to events
+  -- if config.use_libuv_file_watcher then
+  --   manager.subscribe(M.name, {
+  --     event = events,
+  --     handler = function(args)
+  --       manager.refresh(M.name)
   --     end,
   --   })
   -- end
-  register_test_run_result_events(M.name)
-
-  -- You most likely want to use this function to subscribe to events
-  if config.use_libuv_file_watcher then
-    manager.subscribe(M.name, {
-      event = events,
-      handler = function(args)
-        manager.refresh(M.name)
-      end,
-    })
-  end
 end
 
 M.default_config = defaults
