@@ -94,7 +94,6 @@ end
 
 ---@param source_name string
 local function register_test_run_result_events(source_name)
-  print("register tests run events")
   local handles = {}
   vim.api.nvim_create_autocmd("User",
     {
