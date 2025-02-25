@@ -63,7 +63,7 @@ local function add_node_to_state(state, node, workspace_dir)
   if not state.tests_tree then
     state.tests_tree = NuiTree({
       winid = vim.api.nvim_get_current_win(),
-      bufnr = vim.api.nvim_get_current_buf(),
+      bufnr = vim.api.nvim_create_buf(false, true),
       get_node_id = function (n)
         return n.id
       end
