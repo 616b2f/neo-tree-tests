@@ -98,7 +98,6 @@ end
 
 ---@param source_name string
 local function register_test_run_result_events(source_name)
-  local handles = {}
   vim.api.nvim_create_autocmd("User",
     {
       group = 'neo-tree-tests',
@@ -109,8 +108,7 @@ local function register_test_run_result_events(source_name)
         local result = ev.data.result
         if result.dataKind == bsp.protocol.Constants.TaskStartDataKind.TestTask then
           local tokenId = data.client_id .. ":" .. result.originId
-          handles = {}
-          handles[tokenId] = {}
+          -- TODO: think if we have something to do here
         elseif result.dataKind == bsp.protocol.Constants.TaskStartDataKind.TestCaseDiscoveryTask then
           -- TODO: think if we have something to do here
         end
@@ -142,12 +140,8 @@ local function register_test_run_result_events(source_name)
       group = 'neo-tree-tests',
       pattern = 'BspProgress:finish',
       callback = function(ev)
-        local data = ev.data
         ---@type bsp.TaskFinishParams
         local result = ev.data.result
-
-        local tokenId = data.client_id .. ":" .. result.originId
-
         if result.dataKind == pt.TaskFinishDataKind.TestCaseDiscoveryFinish then
           -- TODO: think if we need to do here something
         elseif result.dataKind == bsp.protocol.Constants.TaskFinishDataKind.TestReport then
@@ -156,9 +150,6 @@ local function register_test_run_result_events(source_name)
           local lines = {}
           table.insert(lines, "Target: " .. vim.uri_to_fname(test_report.target.uri))
 
-          for _, value in pairs(handles[tokenId]) do
-            table.insert(lines, value)
-          end
           table.insert(lines, "")
           table.insert(lines, "Passed: " .. test_report.passed .. " " ..
                               "Failed: " .. test_report.failed .. " " ..
@@ -180,9 +171,9 @@ local function register_test_run_result_events(source_name)
             border = "single",
             style = "minimal"
           }
-          local win = vim.api.nvim_open_win(buf, true, opts)
-          -- optional: change highlight, otherwise Pmenu is used
-          vim.api.nvim_set_option_value('winhl', 'Normal:MyHighlight', {win=win})
+          -- local win = vim.api.nvim_open_win(buf, true, opts)
+          -- -- optional: change highlight, otherwise Pmenu is used
+          -- vim.api.nvim_set_option_value('winhl', 'Normal:MyHighlight', {win=win})
         elseif result.dataKind == bsp.protocol.Constants.TaskFinishDataKind.TestFinish then
 
           ---@type bsp.TestFinish
@@ -259,11 +250,13 @@ M.navigate = function(state, path)
   end
 end
 
-local function request_test_cases(source_name)
+---@param source_name any
+---@param force boolean Force a refresh
+M.request_test_cases = function(source_name, force)
   local default_request_timeout = 10000
   local clients = bsp.get_clients()
   for _, client in pairs(clients) do
-    if not next(client.test_cases) then
+    if not next(client.test_cases) or force then
 
       local build_targets = nil
       if next(client.build_targets) then
@@ -317,7 +310,7 @@ end
 M.setup = function(config, global_config)
 
   register_test_run_result_events(M.name)
-  request_test_cases(M.name)
+  M.request_test_cases(M.name, false)
 
   -- You most likely want to use this function to subscribe to events
   -- if config.use_libuv_file_watcher then
