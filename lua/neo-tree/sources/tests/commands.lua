@@ -36,6 +36,7 @@ M.show_debug_info = function(state)
 end
 
 M.refresh = function(state)
+  tests.request_test_cases(tests.name, true);
   manager.refresh(tests.name, state)
 end
 
