@@ -35,9 +35,10 @@ M.show_debug_info = function(state)
   print("node extra: " .. vim.inspect(node.extra))
 end
 
-M.refresh = function(state)
-  tests.request_test_cases(tests.name, true);
-  manager.refresh(tests.name, state)
+M.refresh = function(state, callback)
+  tests.request_test_cases(tests.name, true, function ()
+    tests.navigate(state, nil, nil, callback)
+  end)
 end
 
 M.run = function(state)
@@ -74,7 +75,7 @@ end
 
 M.output = function(state)
   local extra = get_node_extra(state)
-  if extra.test_output then
+  if extra and extra.test_output then
     local popup = Popup({
       enter = true,
       focusable = true,

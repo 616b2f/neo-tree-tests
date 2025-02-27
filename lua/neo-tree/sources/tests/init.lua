@@ -8,8 +8,6 @@ local defaults = require("neo-tree.sources.tests.defaults")
 local events = require("neo-tree.events")
 local utils = require("neo-tree.utils")
 
-local NuiTree = require("nui.tree")
-
 local path = require("plenary.path")
 
 local bsp_utils = require("bsp.utils")
@@ -21,6 +19,8 @@ local M = {
   name = "tests",
   display_name = "󰙨 Tests"
 }
+
+local tests_tree = {}
 
 vim.api.nvim_create_augroup('neo-tree-tests', {})
 
@@ -56,40 +56,43 @@ local function convert_test_case_to_node(test_case, client_id)
 end
 
 ---Adds node to the tests tree
----@param state any
 ---@param node neo-tree-tests.Node
 ---@param workspace_dir string
-local function add_node_to_state(state, node, workspace_dir)
-  if not state.tests_tree then
-    state.tests_tree = {}
-  end
+local function add_node_to_state(node, workspace_dir)
+  local parent_node_id = node.extra.build_target.uri
 
-  local node_id = node.extra.build_target.uri
-
-  local parent = vim.iter(state.tests_tree):find(function (v) return v.id == node_id end)
+  local parent = vim.iter(tests_tree):find(function (v) return v.id == parent_node_id end)
 
   if not parent then
-    local name = path:new(vim.uri_to_fname(node_id)):make_relative(workspace_dir)
+    local name = path:new(vim.uri_to_fname(parent_node_id)):make_relative(workspace_dir)
     parent = {
-      id = node_id,
+      id = parent_node_id,
       name = name,
       type = "build_target",
       extra = {
         test_run_state = "unknown"
       }
     }
-    table.insert(state.tests_tree, parent)
+    table.insert(tests_tree, parent)
   end
 
   if not parent.children then
     parent.children = {}
     table.insert(parent.children, node)
   else
+    local old_item_index = nil
     for index, value in ipairs(parent.children) do
-      if value.id == node_id then
-        table.insert(state.tests_tree, index, node)
-        return
+      if not old_item_index and value.id == node.id then
+        old_item_index = index
       end
+    end
+
+    if old_item_index then
+      -- print("item found in parent replace: index=" .. vim.inspect(old_item_index) .. " id==" .. node.id)
+      table.insert(parent.children, old_item_index, node)
+    else
+      -- print("no item found in parent: id==" .. vim.inspect(node.id))
+      table.insert(parent.children, node)
     end
   end
 end
@@ -128,7 +131,7 @@ local function register_test_run_result_events(source_name)
           local node = convert_test_case_to_node(test_case, client_id)
           local client = bsp.get_client_by_id(client_id)
           assert(client, "client could not be found for id: " .. client_id)
-          add_node_to_state(state, node, client.workspace_dir)
+          add_node_to_state(node, client.workspace_dir)
         end
       end
     })
@@ -218,17 +221,34 @@ end
 
 ---Navigate to the given path.
 ---@param path string Path to navigate to. If empty, will navigate to the cwd.
-M.navigate = function(state, path)
+---@param path_to_reveal string Node to focus after the items are loaded.
+---@param callback function Callback to call after the items are loaded.
+M.navigate = function(state, path, path_to_reveal, callback)
   -- if path == nil then
   --   path = vim.fn.getcwd()
   -- end
   -- state.path = path
-  renderer.show_nodes(state.test_cases or {}, state)
+
+  local root = {
+    id = "root",
+    name = "tests",
+    type = "unknown",
+    loaded = true,
+    children = tests_tree or {}
+  }
+  renderer.show_nodes({root}, state)
 end
 
 ---@param source_name any
 ---@param force boolean Force a refresh
-M.request_test_cases = function(source_name, force)
+---@param callback function
+M.request_test_cases = function(source_name, force, callback)
+  local state = manager.get_state(source_name)
+  if state.loading then
+    return
+  end
+  state.loading = true
+
   local default_request_timeout = 10000
   local clients = bsp.get_clients()
   for _, client in pairs(clients) do
@@ -266,27 +286,35 @@ M.request_test_cases = function(source_name, force)
         targets = test_targets,
       }
 
-      client.request(ms.buildTarget_testCaseDiscovery, testCaseDiscoveryParams, function () end, 0)
+      client.request(ms.buildTarget_testCaseDiscovery, testCaseDiscoveryParams, function ()
+        if type(callback) == "function" then
+          callback()
+        end
+      end, 0)
     else
       local test_cases = vim.iter(vim.tbl_values(client.test_cases))
         :flatten()
         :totable()
-      local state = manager.get_state(source_name)
       for _, test_case in pairs(test_cases) do
         local node = convert_test_case_to_node(test_case, client.id)
-        add_node_to_state(state, node, client.workspace_dir)
+        add_node_to_state(node, client.workspace_dir)
+      end
+
+      if type(callback) == "function" then
+        callback()
       end
     end
   end
+
+  state.loading = false
 end
 
 ---Configures the plugin, should be called before the plugin is used.
 ---@param config table Configuration table containing any keys that the user
 --wants to change from the defaults. May be empty to accept default values.
 M.setup = function(config, global_config)
-
   register_test_run_result_events(M.name)
-  M.request_test_cases(M.name, false)
+  M.request_test_cases(M.name, false, nil)
 
   -- You most likely want to use this function to subscribe to events
   -- if config.use_libuv_file_watcher then
