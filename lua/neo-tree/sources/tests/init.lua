@@ -61,39 +61,37 @@ end
 ---@param workspace_dir string
 local function add_node_to_state(state, node, workspace_dir)
   if not state.tests_tree then
-    state.tests_tree = NuiTree({
-      winid = vim.api.nvim_get_current_win(),
-      bufnr = vim.api.nvim_create_buf(false, true),
-      get_node_id = function (n)
-        return n.id
-      end
-    })
+    state.tests_tree = {}
   end
 
-  local parent = state.tests_tree:get_node(node.extra.build_target.uri)
+  local node_id = node.extra.build_target.uri
+
+  local parent = vim.iter(state.tests_tree):find(function (v) return v.id == node_id end)
 
   if not parent then
-    local name = path:new(vim.uri_to_fname(node.extra.build_target.uri)):make_relative(workspace_dir)
-    local node_data = {
-      id = node.extra.build_target.uri,
+    local name = path:new(vim.uri_to_fname(node_id)):make_relative(workspace_dir)
+    parent = {
+      id = node_id,
       name = name,
       type = "build_target",
       extra = {
         test_run_state = "unknown"
       }
     }
-    parent = NuiTree.Node(node_data)
-    -- local root_nodes = state.tests_tree:get_nodes()
-    -- table.insert(root_nodes, parent)
-    -- state.tests_tree:set_nodes(root_nodes)
-    state.tests_tree:add_node(parent)
+    table.insert(state.tests_tree, parent)
   end
 
-  if state.tests_tree:get_node(node.id) then
-    state.tests_tree:remove_node(node.id)
+  if not parent.children then
+    parent.children = {}
+    table.insert(parent.children, node)
+  else
+    for index, value in ipairs(parent.children) do
+      if value.id == node_id then
+        table.insert(state.tests_tree, index, node)
+        return
+      end
+    end
   end
-
-  state.tests_tree:add_node(NuiTree.Node(node), parent.id)
 end
 
 ---@param source_name string
@@ -192,8 +190,6 @@ local function register_test_run_result_events(source_name)
           local node = nil
           if state.tree then
             node = state.tree:get_node(test_case_id)
-          else
-            node = state.tests_tree:get_node(test_case_id)
           end
 
           if node ~= nil then
@@ -227,27 +223,7 @@ M.navigate = function(state, path)
   --   path = vim.fn.getcwd()
   -- end
   -- state.path = path
-  if state.tree then
-    state.tree = nil
-  end
-
-  if state.tests_tree and not state.tree then
-    local items = {}
-    for _, node in pairs(state.tests_tree:get_nodes()) do
-      ---@type NuiTree.Node
-      local n = node
-      if n:has_children() then
-        n.children = {}
-
-        for _, child in pairs(state.tests_tree:get_nodes(n:get_id())) do
-          table.insert(n.children, child)
-        end
-        table.insert(items, n)
-      end
-    end
-
-    renderer.show_nodes(items, state)
-  end
+  renderer.show_nodes(state.test_cases or {}, state)
 end
 
 ---@param source_name any
