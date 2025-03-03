@@ -37,7 +37,7 @@ end
 
 M.refresh = function(state, callback)
   tests.request_test_cases(tests.name, true, function ()
-    tests.navigate(state, nil, nil, callback)
+    manager.navigate(tests.name)
   end)
 end
 

@@ -20,6 +20,7 @@ local M = {
   display_name = "󰙨 Tests"
 }
 
+---@type table<integer, neo-tree-tests.Node[]>
 local tests_tree = {}
 
 vim.api.nvim_create_augroup('neo-tree-tests', {})
@@ -56,12 +57,18 @@ local function convert_test_case_to_node(test_case, client_id)
 end
 
 ---Adds node to the tests tree
+---@param client_id integer ID of the BSP client
 ---@param node neo-tree-tests.Node
 ---@param workspace_dir string
-local function add_node_to_state(node, workspace_dir)
+local function add_node_to_state(client_id, node, workspace_dir)
+
+  if not tests_tree[client_id] then
+    tests_tree[client_id] = {}
+  end
+
   local parent_node_id = node.extra.build_target.uri
 
-  local parent = vim.iter(tests_tree):find(function (v) return v.id == parent_node_id end)
+  local parent = vim.iter(tests_tree[client_id]):find(function (v) return v.id == parent_node_id end)
 
   if not parent then
     local name = path:new(vim.uri_to_fname(parent_node_id)):make_relative(workspace_dir)
@@ -73,7 +80,7 @@ local function add_node_to_state(node, workspace_dir)
         test_run_state = "unknown"
       }
     }
-    table.insert(tests_tree, parent)
+    table.insert(tests_tree[client_id], parent)
   end
 
   if not parent.children then
@@ -89,7 +96,9 @@ local function add_node_to_state(node, workspace_dir)
 
     if old_item_index then
       -- print("item found in parent replace: index=" .. vim.inspect(old_item_index) .. " id==" .. node.id)
+      table.remove(parent.children, old_item_index)
       table.insert(parent.children, old_item_index, node)
+      -- print("after children: " .. vim.inspect(parent.children))
     else
       -- print("no item found in parent: id==" .. vim.inspect(node.id))
       table.insert(parent.children, node)
@@ -111,7 +120,7 @@ local function register_test_run_result_events(source_name)
           local tokenId = data.client_id .. ":" .. result.originId
           -- TODO: think if we have something to do here
         elseif result.dataKind == bsp.protocol.Constants.TaskStartDataKind.TestCaseDiscoveryTask then
-          -- TODO: think if we have something to do here
+          tests_tree[data.client_id] = {}
         end
       end
     })
@@ -131,7 +140,7 @@ local function register_test_run_result_events(source_name)
           local node = convert_test_case_to_node(test_case, client_id)
           local client = bsp.get_client_by_id(client_id)
           assert(client, "client could not be found for id: " .. client_id)
-          add_node_to_state(node, client.workspace_dir)
+          add_node_to_state(client_id, node, client.workspace_dir)
         end
       end
     })
@@ -228,15 +237,35 @@ M.navigate = function(state, path, path_to_reveal, callback)
   --   path = vim.fn.getcwd()
   -- end
   -- state.path = path
+  --
 
-  local root = {
-    id = "root",
-    name = "tests",
-    type = "unknown",
-    loaded = true,
-    children = tests_tree or {}
-  }
-  renderer.show_nodes({root}, state)
+  local root_nodes = {}
+  for client_id, test_tree in pairs(tests_tree) do
+    local client = bsp.get_client_by_id(client_id)
+    assert(client, "could not retrieve bsp client")
+    local root = {
+      id = "bsp:client_id:" .. client_id,
+      name = "[BSP]: " .. client.name,
+      type = "bsp_client",
+      children = test_tree or {}
+    }
+    table.insert(root_nodes, root)
+  end
+
+  renderer.show_nodes(root_nodes, state)
+
+  -- if state and state.tree then
+  --   renderer.show_nodes(tests_tree or {}, state, "test_root")
+  -- else
+  --   local root = {
+  --     id = "test_root",
+  --     name = "tests",
+  --     type = "unknown",
+  --     -- loaded = true,
+  --     children = tests_tree or {}
+  --   }
+  --   renderer.show_nodes({root}, state)
+  -- end
 end
 
 ---@param source_name any
@@ -297,7 +326,7 @@ M.request_test_cases = function(source_name, force, callback)
         :totable()
       for _, test_case in pairs(test_cases) do
         local node = convert_test_case_to_node(test_case, client.id)
-        add_node_to_state(node, client.workspace_dir)
+        add_node_to_state(client.id, node, client.workspace_dir)
       end
 
       if type(callback) == "function" then

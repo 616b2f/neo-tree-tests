@@ -4,6 +4,9 @@ local config = {
       { "icon" },
       { "name" },
     },
+    bsp_client = {
+      { "name" },
+    },
     build_target = {
       { "icon",
         icons = {
